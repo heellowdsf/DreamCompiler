@@ -1,0 +1,22 @@
+// Diagnose GPU matmul: all-ones inputs give fp32-EXACT results (256 is exactly
+// representable), so any deviation is a real kernel bug, not precision.
+// Compare this on YOUR GPU vs the expected values below.
+fn app() {
+    let a = ones(256, 256);
+    let b = ones(256, 256);
+    let c = a @ b;   // every element must be EXACTLY 256
+    print("sum(c) -- must be EXACTLY 16777216: ");
+    println(sum(c));
+    println("");
+    // Now a random matmul with SMALL K so fp32 error is tiny.
+    set_seed(1);
+    let x = randn(256, 8);    // K=8: fp32 accumulation error negligible
+    let y = randn(8, 256);
+    let z = x @ y;
+    print("small-K random matmul sum: ");
+    println(sum(z));
+    println("");
+    println("Compare sum(c) to 16777216. If it differs, GPU matmul kernel is buggy.");
+    println("The small-K sum you can compare between a CPU run and GPU run.");
+    return 0.0;
+}

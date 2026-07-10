@@ -1,0 +1,97 @@
+// =====================================================================
+//  char_gpt.dream -- a character-level GPT trained purely in Dream.
+//
+//  Architecture (1 transformer block):
+//    tok_emb + pos_emb -> layer_norm -> Q/K/V linear projections
+//    -> scaled-dot-product attention -> residual
+//    -> FFN (linear-relu-linear) -> residual
+//    -> head: linear over the flattened sequence -> logits over vocab
+//  Loss: nll(log_softmax) on the next character. Optimizer: AdamW.
+//
+//  Every op on this path is gradcheck-verified (43/43), including the
+//  attention backward implemented from the softmax JVP.
+//
+//  Data: gpt_X.csv (N x 16 char indices), gpt_Y.csv (N x 1 next-char),
+//  produced by any text tool. V = 28, S = 16, dk = 32.
+// =====================================================================
+
+fn fwd(bx, B, W_emb, pos, Wq, bq, Wk, bk, Wv, bv, W1, b1, W2, b2, Wout, bout) {
+    let e  = embedding(bx, W_emb);              // (B*S) x 32
+    let x0 = reshape(e, B, 512.0) + pos;        // B x 512, broadcast pos row
+    let xl = layer_norm(x0);
+    let xf = reshape(xl, B * 16.0, 32.0);       // (B*S) x 32 per-position
+    let q  = reshape(linear(xf, Wq, bq), B, 512.0);
+    let k  = reshape(linear(xf, Wk, bk), B, 512.0);
+    let v  = reshape(linear(xf, Wv, bv), B, 512.0);
+    let at = attention(q, k, v, B, 16.0, 32.0); // B x 512
+    let h  = x0 + at;                           // residual
+    let hf = reshape(h, B * 16.0, 32.0);
+    let f1 = relu(linear(hf, W1, b1));          // (B*S) x 64
+    let f2 = reshape(linear(f1, W2, b2), B, 512.0);
+    let h2 = h + f2;                            // residual
+    return linear(h2, Wout, bout);              // B x 28 logits
+}
+
+fn app() {
+    set_seed(7);
+    let X = read_csv("gpt_X.csv", 0);
+    let Y = read_csv("gpt_Y.csv", 0);
+    println("data loaded");
+
+    let W_emb = randn(28, 32) * 0.08;
+    let pos   = randn(1, 512) * 0.02;
+    let Wq = kaiming_init(32, 32);  let bq = zeros(1, 32);
+    let Wk = kaiming_init(32, 32);  let bk = zeros(1, 32);
+    let Wv = kaiming_init(32, 32);  let bv = zeros(1, 32);
+    let W1 = kaiming_init(64, 32);  let b1 = zeros(1, 64);
+    let W2 = kaiming_init(32, 64);  let b2 = zeros(1, 32);
+    let Wout = kaiming_init(28, 512); let bout = zeros(1, 28);
+
+    let it = batch_iter(X, Y, 32);
+    for (epoch in 0..8) {
+        reset_iter(it);
+        let last = 0.0;
+        while (has_next(it) > 0.5) {
+            let (bx, by) = next_batch(it);
+            let logits = fwd(bx, 32.0, W_emb, pos, Wq, bq, Wk, bk, Wv, bv,
+                             W1, b1, W2, b2, Wout, bout);
+            let loss = nll_loss(log_softmax(logits), by);
+            backward(loss);
+            adamw_update(W_emb, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(W_emb);
+            adamw_update(pos,   0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(pos);
+            adamw_update(Wq, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(Wq);
+            adamw_update(bq, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(bq);
+            adamw_update(Wk, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(Wk);
+            adamw_update(bk, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(bk);
+            adamw_update(Wv, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(Wv);
+            adamw_update(bv, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(bv);
+            adamw_update(W1, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(W1);
+            adamw_update(b1, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(b1);
+            adamw_update(W2, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(W2);
+            adamw_update(b2, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(b2);
+            adamw_update(Wout, 0.002, 0.9, 0.999, 0.00000001, 0.01); zero_grad(Wout);
+            adamw_update(bout, 0.002, 0.9, 0.999, 0.00000001, 0.0);  zero_grad(bout);
+            last = last * 0.0 + loss[0];
+        }
+        print("epoch "); print(epoch); print("  loss "); println(last);
+    }
+
+    // ---- generation: greedy, 160 chars from the corpus-opening seed ----
+    println("---GEN---");
+    let ctx = zeros(16, 1);
+    ctx[0]=21; ctx[1]=9;  ctx[2]=6;  ctx[3]=0;  ctx[4]=18; ctx[5]=22;
+    ctx[6]=10; ctx[7]=4;  ctx[8]=12; ctx[9]=0;  ctx[10]=3; ctx[11]=19;
+    ctx[12]=16; ctx[13]=24; ctx[14]=15; ctx[15]=0;
+    let g = 0;
+    while (g < 160) {
+        let logits = fwd(ctx, 1.0, W_emb, pos, Wq, bq, Wk, bk, Wv, bv,
+                         W1, b1, W2, b2, Wout, bout);
+        let nxt = argmax(logits);
+        println(nxt);
+        let i = 0;
+        while (i < 15) { ctx[i] = ctx[i + 1]; i = i + 1; }
+        ctx[15] = nxt;
+        g = g + 1;
+    }
+    return 0.0;
+}

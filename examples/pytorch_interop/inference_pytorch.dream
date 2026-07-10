@@ -1,0 +1,62 @@
+// inference_pytorch.dream — Load a PyTorch-trained model and run inference.
+//
+// Prerequisites:
+//   pip install numpy torch safetensors
+//   python examples/export_pytorch_model.py --train_demo
+// Then:
+//   build\Debug\DreamCompiler.exe examples\inference_pytorch.dream
+
+fn app() {
+    println("=== Loading PyTorch model into Dream ===");
+
+    let ts = load_safetensors("pytorch_mlp.safetensors");
+    if (ts < 0.0) {
+        println("ERROR: pytorch_mlp.safetensors not found.");
+        println("Run first: python examples/export_pytorch_model.py --train_demo");
+        return 1.0;
+    }
+
+    // Show what's inside
+    st_list(ts);
+
+    // Extract all 6 weight tensors (PyTorch naming convention)
+    let W1 = st_get(ts, "fc1.weight");
+    let b1 = st_get(ts, "fc1.bias");
+    let W2 = st_get(ts, "fc2.weight");
+    let b2 = st_get(ts, "fc2.bias");
+    let W3 = st_get(ts, "fc3.weight");
+    let b3 = st_get(ts, "fc3.bias");
+
+    println("\n=== Inference on a single sample ===");
+
+    // One test input — Dream's linear() expects (batch, features)
+    // and W as (out_dim, in_dim), exactly like PyTorch
+    let x = randn(1, 64);
+
+    let h1 = linear_relu(x, W1, b1);
+    let h2 = linear_relu(h1, W2, b2);
+    let logits = linear(h2, W3, b3);
+
+    println("Logits shape: 1 x 10");
+    print(logits);
+
+    // argmax over the whole 10-element output
+    let pred = argmax(logits);
+    println("Predicted class: ", pred);
+
+    println("\n=== Batch inference ===");
+
+    // 4 random samples at once
+    let batch = randn(4, 64);
+    let bh1 = linear_relu(batch, W1, b1);
+    let bh2 = linear_relu(bh1, W2, b2);
+    let blogits = linear(bh2, W3, b3);
+
+    println("Batch logits shape: 4 x 10");
+    print(blogits);
+
+    println("\n=== Success ===");
+    println("Dream ran inference on a PyTorch model with 0 Python overhead.");
+    println("The 6 parameters (fc1/fc2/fc3 weight+bias) are loaded natively.");
+    return 0.0;
+}

@@ -1,0 +1,61 @@
+// dream_to_pytorch.dream — Train a model in Dream, export to safetensors,
+// then load into PyTorch (closes the loop — Dream and PyTorch are now interoperable).
+
+fn app() {
+    println("=== Training model in Dream, exporting for PyTorch ===\n");
+
+    set_seed(42);
+    let (X, Y) = gen_digits(100);
+
+    // Standard MLP
+    let W1 = kaiming_init(128, 64);
+    let b1 = zeros(1, 128);
+    let W2 = kaiming_init(64, 128);
+    let b2 = zeros(1, 64);
+    let W3 = kaiming_init(10, 64);
+    let b3 = zeros(1, 10);
+
+    let iter = batch_iter(X, Y, 64);
+    for (epoch in 0..15) {
+        reset_iter(iter);
+        while (has_next(iter) > 0.5) {
+            let (bx, by) = next_batch(iter);
+            let h1 = linear_relu(bx, W1, b1);
+            let h2 = linear_relu(h1, W2, b2);
+            let logits = linear(h2, W3, b3);
+            let lp = log_softmax(logits);
+            let loss = nll_loss(lp, by);
+            backward(loss);
+            param_update(W1, grad(W1), 0.01); zero_grad(W1);
+            param_update(b1, grad(b1), 0.01); zero_grad(b1);
+            param_update(W2, grad(W2), 0.01); zero_grad(W2);
+            param_update(b2, grad(b2), 0.01); zero_grad(b2);
+            param_update(W3, grad(W3), 0.01); zero_grad(W3);
+            param_update(b3, grad(b3), 0.01); zero_grad(b3);
+        }
+        if (epoch % 3 == 0) {
+            let h1 = linear_relu(X, W1, b1);
+            let h2 = linear_relu(h1, W2, b2);
+            let logits = linear(h2, W3, b3);
+            let acc = accuracy(logits, Y);
+            println("epoch ", epoch, "  acc=", acc);
+        }
+    }
+
+    // Export using PyTorch-style names so PyTorch can load it
+    let id = ckpt_new();
+    ckpt_add(id, "fc1.weight", W1);
+    ckpt_add(id, "fc1.bias",   b1);
+    ckpt_add(id, "fc2.weight", W2);
+    ckpt_add(id, "fc2.bias",   b2);
+    ckpt_add(id, "fc3.weight", W3);
+    ckpt_add(id, "fc3.bias",   b3);
+    save_safetensors(id, "dream_trained.safetensors");
+
+    println("\n=== Dream-trained model exported to dream_trained.safetensors ===");
+    println("Load in PyTorch:");
+    println("  from safetensors.torch import load_file");
+    println("  state = load_file('dream_trained.safetensors')");
+    println("  model.load_state_dict(state)");
+    return 0.0;
+}

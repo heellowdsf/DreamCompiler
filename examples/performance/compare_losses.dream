@@ -1,0 +1,78 @@
+// compare_losses.dream — Sanity test: does log_softmax + nll_loss work?
+// Trains two IDENTICAL models for 15 epochs, one with each loss.
+// If the new stable loss works correctly, both should reach ~100% accuracy.
+
+fn app() {
+    println("=== Comparing cross_entropy vs log_softmax+nll_loss ===");
+
+    set_seed(42);
+    let (images, labels) = gen_digits(100);
+
+    // Model 1: Original cross_entropy
+    println("\n--- Model 1: cross_entropy ---");
+    let W1a = kaiming_init(128, 64);
+    let b1a = zeros(1, 128);
+    let W2a = kaiming_init(10, 128);
+    let b2a = zeros(1, 10);
+    let iter1 = batch_iter(images, labels, 64);
+
+    for (epoch in 0..15) {
+        reset_iter(iter1);
+        while (has_next(iter1) > 0.5) {
+            let (bx, by) = next_batch(iter1);
+            let z1 = bx @ transpose(W1a) + b1a;
+            let a1 = relu(z1);
+            let logits = a1 @ transpose(W2a) + b2a;
+            let loss = cross_entropy(logits, by);
+            backward(loss);
+            param_update(W1a, grad(W1a), 0.01); zero_grad(W1a);
+            param_update(b1a, grad(b1a), 0.01); zero_grad(b1a);
+            param_update(W2a, grad(W2a), 0.01); zero_grad(W2a);
+            param_update(b2a, grad(b2a), 0.01); zero_grad(b2a);
+        }
+        if (epoch % 3 == 0) {
+            let ez1 = images @ transpose(W1a) + b1a;
+            let ea1 = relu(ez1);
+            let tp = ea1 @ transpose(W2a) + b2a;
+            let acc = accuracy(tp, labels);
+            println("  epoch ", epoch, " acc=", acc);
+        }
+    }
+
+    // Model 2: log_softmax + nll_loss
+    println("\n--- Model 2: log_softmax + nll_loss ---");
+    set_seed(42);  // same seed for fair comparison
+    let W1b = kaiming_init(128, 64);
+    let b1b = zeros(1, 128);
+    let W2b = kaiming_init(10, 128);
+    let b2b = zeros(1, 10);
+    let iter2 = batch_iter(images, labels, 64);
+
+    for (epoch in 0..15) {
+        reset_iter(iter2);
+        while (has_next(iter2) > 0.5) {
+            let (bx, by) = next_batch(iter2);
+            let z1 = bx @ transpose(W1b) + b1b;
+            let a1 = relu(z1);
+            let logits = a1 @ transpose(W2b) + b2b;
+            let log_probs = log_softmax(logits);
+            let loss = nll_loss(log_probs, by);
+            backward(loss);
+            param_update(W1b, grad(W1b), 0.01); zero_grad(W1b);
+            param_update(b1b, grad(b1b), 0.01); zero_grad(b1b);
+            param_update(W2b, grad(W2b), 0.01); zero_grad(W2b);
+            param_update(b2b, grad(b2b), 0.01); zero_grad(b2b);
+        }
+        if (epoch % 3 == 0) {
+            let ez1 = images @ transpose(W1b) + b1b;
+            let ea1 = relu(ez1);
+            let tp = ea1 @ transpose(W2b) + b2b;
+            let acc = accuracy(tp, labels);
+            println("  epoch ", epoch, " acc=", acc);
+        }
+    }
+
+    println("\nExpected: both models should reach near-100% accuracy.");
+    println("If nll_loss accuracy stays low, the backward rule is buggy.");
+    return 0.0;
+}

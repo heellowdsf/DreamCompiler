@@ -1,0 +1,83 @@
+// Dream realistic performance benchmark
+// Reflects actual training workload proportions
+
+fn app() {
+    println("=== Dream Performance Benchmark ===");
+    println("Reflects real training workload (not stress-test).\n");
+
+    // Warmup
+    let warm = randn(32, 32);
+    let _ = warm @ warm;
+
+    println("--- Matrix multiplication (training-typical sizes) ---");
+    let a64 = randn(64, 64);
+    let b64 = randn(64, 64);
+    let t1 = tic("matmul_64x64");
+    for (i in 0..100) { let c = a64 @ b64; }
+    toc(t1, "matmul_64x64 x100");
+
+    let a128 = randn(128, 128);
+    let b128 = randn(128, 128);
+    let t2 = tic("matmul_128x128");
+    for (i in 0..100) { let c = a128 @ b128; }
+    toc(t2, "matmul_128x128 x100");
+
+    let a256 = randn(256, 256);
+    let b256 = randn(256, 256);
+    let t3 = tic("matmul_256x256");
+    for (i in 0..10) { let c = a256 @ b256; }
+    toc(t3, "matmul_256x256 x10");
+
+    println("\n--- Transpose (100 iterations, realistic frequency) ---");
+    let big = randn(512, 512);
+    let t4 = tic("transpose_512");
+    for (i in 0..100) { let t = transpose(big); }
+    toc(t4, "transpose_512 x100");
+
+    // Smaller more realistic: W1 in MLP is 128x64
+    let W = randn(128, 64);
+    let t4b = tic("transpose_128x64");
+    for (i in 0..1000) { let t = transpose(W); }
+    toc(t4b, "transpose_128x64 x1000 (MLP weight)");
+
+    println("\n--- Element-wise ops (parallel via OpenMP) ---");
+    let x = randn(256, 256);
+    let y = randn(256, 256);
+    let t5 = tic("add_256"); for (i in 0..100) { let z = x + y; } toc(t5, "add_256x256 x100");
+    let t6 = tic("mul_256"); for (i in 0..100) { let z = x * y; } toc(t6, "mul_256x256 x100");
+    let t7 = tic("relu_256"); for (i in 0..100) { let z = relu(x); } toc(t7, "relu_256x256 x100");
+
+    println("\n--- Fused Linear (the MLP hot path) ---");
+    let input = randn(64, 128);
+    let Wl = randn(256, 128);
+    let bl = randn(1, 256);
+    let t8 = tic("manual_linear"); for (i in 0..100) { let out = input @ transpose(Wl) + bl; } toc(t8, "manual: x@W^T+b x100");
+    let t9 = tic("fused_linear"); for (i in 0..100) { let out = linear(input, Wl, bl); } toc(t9, "fused: linear() x100");
+    let t10 = tic("fused_linear_relu"); for (i in 0..100) { let out = linear_relu(input, Wl, bl); } toc(t10, "fused: linear_relu() x100");
+
+    println("\n--- Full training step (realistic end-to-end) ---");
+    let X = randn(64, 64);
+    let Y = ones(64, 10);
+    let W1 = kaiming_init(128, 64);
+    let b1 = zeros(1, 128);
+    let W2 = kaiming_init(10, 128);
+    let b2 = zeros(1, 10);
+
+    let t11 = tic("train_step");
+    for (i in 0..20) {
+        let z1 = X @ transpose(W1) + b1;
+        let a1 = relu(z1);
+        let z2 = a1 @ transpose(W2) + b2;
+        let loss = mse_loss(z2, Y);
+        backward(loss);
+        param_update(W1, grad(W1), 0.01); zero_grad(W1);
+        param_update(b1, grad(b1), 0.01); zero_grad(b1);
+        param_update(W2, grad(W2), 0.01); zero_grad(W2);
+        param_update(b2, grad(b2), 0.01); zero_grad(b2);
+    }
+    toc(t11, "full train step x20");
+
+    op_stats();
+    println("=== Done ===");
+    return 0.0;
+}

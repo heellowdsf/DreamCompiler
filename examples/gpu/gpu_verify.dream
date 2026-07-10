@@ -1,0 +1,14 @@
+// =====================================================================
+//  gpu_verify.dream -- verify YOUR GPU computes correctly.
+//  Run:  dream run gpu_verify.dream
+//
+//  Your machine has an OpenCL GPU (Dream detected it). This runs the GPU
+//  kernels (tiled matmul, elementwise) and compares against the trusted CPU
+//  reference. On a CPU-only machine it prints SKIP; on your GPU it actually
+//  checks the numbers match to fp32 tolerance. This is the real-hardware
+//  verification we could not do in the dev container.
+// =====================================================================
+fn app() {
+    gpu_selftest();
+    return 0.0;
+}

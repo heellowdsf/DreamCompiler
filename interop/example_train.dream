@@ -1,0 +1,70 @@
+// =====================================================================
+//  example_train.dream - train on data collected by a C project,
+//                        then export back to C
+//
+//  Full interop loop:
+//    C collect (dream_capture.h) -> CSV -> Dream train -> export C
+//                                         inference fn -> C include & call
+//
+//  Run:      dream run example_train.dream
+//  Produces: demo_model.h / demo_model.c (dependency-free C99 inference)
+// =====================================================================
+
+fn forward(x, W1, b1, W2, b2) {
+    let z1 = x @ transpose(W1) + b1;
+    let a1 = relu(z1);
+    let z2 = a1 @ transpose(W2) + b2;
+    return z2;
+}
+
+fn app() {
+    println("=== train on C-collected circle classification data ===");
+    set_seed(42);
+
+    // Read the data collected by example_collect.c
+    let X = read_csv("demo_X.csv", 0);
+    let Y = read_csv("demo_Y.csv", 0);
+    println("data loaded");
+
+    // 2 -> 16 -> 2 classification network
+    let W1 = kaiming_init(16, 2);
+    let b1 = zeros(1, 16);
+    let W2 = kaiming_init(2, 16);
+    let b2 = zeros(1, 2);
+
+    let lr = 0.1;
+    let iter = batch_iter(X, Y, 64);
+
+    for (epoch in 0..40) {
+        reset_iter(iter);
+        while (has_next(iter) > 0.5) {
+            let (bx, by) = next_batch(iter);
+            let logits = forward(bx, W1, b1, W2, b2);
+            let loss = nll_loss(log_softmax(logits), by);
+            backward(loss);
+            param_update(W1, grad(W1), lr); zero_grad(W1);
+            param_update(b1, grad(b1), lr); zero_grad(b1);
+            param_update(W2, grad(W2), lr); zero_grad(W2);
+            param_update(b2, grad(b2), lr); zero_grad(b2);
+        }
+        if (epoch % 10 == 0) {
+            let acc = accuracy(forward(X, W1, b1, W2, b2), Y);
+            println("epoch ", epoch, "  acc=", acc);
+        }
+    }
+
+    let final_acc = accuracy(forward(X, W1, b1, W2, b2), Y);
+    println("final accuracy: ", final_acc);
+
+    // Export as a C inference function; a C project can include and call it
+    let id = ckpt_new();
+    ckpt_add(id, "fc1.weight", W1);
+    ckpt_add(id, "fc1.bias", b1);
+    ckpt_add(id, "fc2.weight", W2);
+    ckpt_add(id, "fc2.bias", b2);
+    ckpt_set_meta(id, 40, 0, lr);
+    export_c_header(id, "demo_model", "demo_predict");
+
+    println("exported demo_model.h / demo_model.c");
+    return 0.0;
+}

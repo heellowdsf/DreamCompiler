@@ -1,0 +1,63 @@
+// =====================================================================
+//  data_parallel_train.dream -- real data-parallel training you can time.
+//
+//  This runs a genuine training loop with the data-parallel primitives:
+//  the batch is sharded, each shard's gradient accumulates into the shared
+//  params (all-reduce SUM), then AdamW steps. It converges to the same
+//  result as single-device training (dist_selftest proves this bit-for-bit).
+//
+//  TO MEASURE MULTI-CORE SPEEDUP on your machine:
+//    OMP_NUM_THREADS=1 dream run data_parallel_train.dream   # baseline
+//    OMP_NUM_THREADS=2 dream run data_parallel_train.dream   # ~2x on GEMM
+//    OMP_NUM_THREADS=8 dream run data_parallel_train.dream
+//  Dream's GEMM is OpenMP-parallel, so more cores = faster steps. The wall
+//  time printed at the end is what to compare across thread counts.
+// =====================================================================
+fn app() {
+    set_seed(7);
+    let world = 4.0;
+
+    // A reasonably-sized model so compute dominates (GEMM-heavy = scales well)
+    let X = randn(512, 256);
+    let Y = zeros(512, 1);
+    let i = 0;
+    while (i < 512) { if (i >= 256) { Y[i] = 1.0; } i = i + 1; }
+
+    let W1 = kaiming_init(256, 256);  let b1 = zeros(1, 256);
+    let W2 = kaiming_init(256, 256);  let b2 = zeros(1, 256);
+    let W3 = kaiming_init(2, 256);    let b3 = zeros(1, 2);
+
+    let t_start = time();
+    let ep = 0;
+    while (ep < 30) {
+        zero_grad(W1); zero_grad(b1); zero_grad(W2);
+        zero_grad(b2); zero_grad(W3); zero_grad(b3);
+        // data-parallel: each rank computes its shard's gradient (accumulates)
+        let r = 0;
+        while (r < world) {
+            let xs = data_shard(X, r, world);
+            let ys = data_shard(Y, r, world);
+            let h1 = relu(linear(xs, W1, b1));
+            let h2 = relu(linear(h1, W2, b2));
+            let loss = nll_loss(log_softmax(linear(h2, W3, b3)), ys);
+            backward(loss);
+            r = r + 1;
+        }
+        adamw_update(W1, 0.001, 0.9, 0.999, 0.00000001, 0.001);
+        adamw_update(b1, 0.001, 0.9, 0.999, 0.00000001, 0.0);
+        adamw_update(W2, 0.001, 0.9, 0.999, 0.00000001, 0.001);
+        adamw_update(b2, 0.001, 0.9, 0.999, 0.00000001, 0.0);
+        adamw_update(W3, 0.001, 0.9, 0.999, 0.00000001, 0.001);
+        adamw_update(b3, 0.001, 0.9, 0.999, 0.00000001, 0.0);
+        ep = ep + 1;
+    }
+    let t_end = time();
+
+    let h1 = relu(linear(X, W1, b1));
+    let h2 = relu(linear(h1, W2, b2));
+    print("final accuracy: ");
+    println(accuracy(linear(h2, W3, b3), Y));
+    print("WALLTIME=");
+    println(t_end - t_start);
+    return 0.0;
+}

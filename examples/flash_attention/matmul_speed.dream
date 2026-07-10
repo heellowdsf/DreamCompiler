@@ -1,0 +1,28 @@
+// =====================================================================
+//  matmul_speed.dream -- time GPU matmul (with warmup for fair timing).
+//  Run:  dream run matmul_speed.dream
+// =====================================================================
+fn app() {
+    gpu_warmup();          // pay one-time GPU init/compile cost now
+    set_seed(1);
+
+    let a1 = randn(256, 256); let b1 = randn(256, 256);
+    let t0 = time(); let c1 = a1 @ b1; let t1 = time();
+    print("256x256   matmul wall: "); println(t1 - t0);
+
+    let a2 = randn(512, 512); let b2 = randn(512, 512);
+    let t2 = time(); let c2 = a2 @ b2; let t3 = time();
+    print("512x512   matmul wall: "); println(t3 - t2);
+
+    let a3 = randn(1024, 1024); let b3 = randn(1024, 1024);
+    let t4 = time(); let c3 = a3 @ b3; let t5 = time();
+    print("1024x1024 matmul wall: "); println(t5 - t4);
+
+    let a4 = randn(2048, 2048); let b4 = randn(2048, 2048);
+    let t6 = time(); let c4 = a4 @ b4; let t7 = time();
+    print("2048x2048 matmul wall: "); println(t7 - t6);
+
+    println("");
+    println("Warmup paid startup; these are real GPU compute times.");
+    return 0.0;
+}

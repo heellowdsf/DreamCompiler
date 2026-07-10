@@ -1,0 +1,61 @@
+// export_int8_demo.dream - Train an MLP, export BOTH float and int8 versions,
+// so you can compare size and verify int8 still predicts correctly.
+
+fn app() {
+    println("=== Dream float vs int8 export comparison ===\n");
+
+    set_seed(42);
+    let (X, Y) = gen_digits(100);
+
+    let W1 = kaiming_init(128, 64);
+    let b1 = zeros(1, 128);
+    let W2 = kaiming_init(64, 128);
+    let b2 = zeros(1, 64);
+    let W3 = kaiming_init(10, 64);
+    let b3 = zeros(1, 10);
+
+    let iter = batch_iter(X, Y, 64);
+    println("Training 3-layer MLP...");
+    for (epoch in 0..15) {
+        reset_iter(iter);
+        while (has_next(iter) > 0.5) {
+            let (bx, by) = next_batch(iter);
+            let h1 = linear_relu(bx, W1, b1);
+            let h2 = linear_relu(h1, W2, b2);
+            let logits = linear(h2, W3, b3);
+            let lp = log_softmax(logits);
+            let loss = nll_loss(lp, by);
+            backward(loss);
+            param_update(W1, grad(W1), 0.01); zero_grad(W1);
+            param_update(b1, grad(b1), 0.01); zero_grad(b1);
+            param_update(W2, grad(W2), 0.01); zero_grad(W2);
+            param_update(b2, grad(b2), 0.01); zero_grad(b2);
+            param_update(W3, grad(W3), 0.01); zero_grad(W3);
+            param_update(b3, grad(b3), 0.01); zero_grad(b3);
+        }
+    }
+    let ph1 = linear_relu(X, W1, b1);
+    let ph2 = linear_relu(ph1, W2, b2);
+    let plogits = linear(ph2, W3, b3);
+    println("Training accuracy: ", accuracy(plogits, Y));
+
+    // Package params
+    let id = ckpt_new();
+    ckpt_add(id, "fc1.weight", W1);
+    ckpt_add(id, "fc1.bias",   b1);
+    ckpt_add(id, "fc2.weight", W2);
+    ckpt_add(id, "fc2.bias",   b2);
+    ckpt_add(id, "fc3.weight", W3);
+    ckpt_add(id, "fc3.bias",   b3);
+
+    println("\n--- Export #1: float32 (existing) ---");
+    export_c_header(id, "mlp_float", "mlp_predict_float");
+
+    println("\n--- Export #2: int8 quantized (new) ---");
+    export_c_header_int8(id, "mlp_int8", "mlp_predict_int8");
+
+    println("\n=== Compare the two .c files for size ===");
+    println("  mlp_float.c  - weights as float (each param = 4 bytes)");
+    println("  mlp_int8.c   - weights as int8  (each param = 1 byte + scale)");
+    return 0.0;
+}

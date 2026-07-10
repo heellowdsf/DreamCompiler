@@ -1,0 +1,41 @@
+// =====================================================================
+//  gpu_cpu_crossover.dream -- GPU vs CPU matmul timing (threshold now 512x512).
+//  Run:  dream run gpu_cpu_crossover.dream
+//
+//  GPU dispatch threshold is M*N >= 262144 (512x512), tuned from your data.
+//  Below it -> CPU (faster for small matmuls on integrated graphics).
+//  gpu_warmup() pre-compiles the GPU kernel so timings are pure compute.
+// =====================================================================
+fn app() {
+    gpu_warmup();
+    set_seed(1);
+
+    let a1 = randn(128, 128); let b1 = randn(128, 128);
+    let t0 = time(); let c1 = a1 @ b1; let t1 = time();
+    print("128x128   (CPU) wall: "); println(t1 - t0);
+
+    let a2 = randn(256, 256); let b2 = randn(256, 256);
+    let t2 = time(); let c2 = a2 @ b2; let t3 = time();
+    print("256x256   (CPU) wall: "); println(t3 - t2);
+
+    let a3 = randn(512, 512); let b3 = randn(512, 512);
+    let t4 = time(); let c3 = a3 @ b3; let t5 = time();
+    print("512x512   (GPU) wall: "); println(t5 - t4);
+
+    let a4 = randn(768, 768); let b4 = randn(768, 768);
+    let t6 = time(); let c4 = a4 @ b4; let t7 = time();
+    print("768x768   (GPU) wall: "); println(t7 - t6);
+
+    let a5 = randn(1024, 1024); let b5 = randn(1024, 1024);
+    let t8 = time(); let c5 = a5 @ b5; let t9 = time();
+    print("1024x1024 (GPU) wall: "); println(t9 - t8);
+
+    let a6 = randn(1536, 1536); let b6 = randn(1536, 1536);
+    let t10 = time(); let c6 = a6 @ b6; let t11 = time();
+    print("1536x1536 (GPU) wall: "); println(t11 - t10);
+
+    println("");
+    println("Now warmup pre-compiles the GPU kernel, so 768+ should be fast");
+    println("(not the ~1s you saw when the kernel compiled on first GPU call).");
+    return 0.0;
+}

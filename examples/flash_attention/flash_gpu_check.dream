@@ -1,0 +1,30 @@
+// =====================================================================
+//  flash_gpu_check.dream -- verify GPU FlashAttention on YOUR GPU.
+//  Run:  dream run flash_gpu_check.dream
+//
+//  With a long sequence, flash_attention dispatches to the OpenCL GPU kernel
+//  (one work-item per query row, online softmax in registers, no S x S matrix
+//  in global memory). This checks the GPU result matches standard attention.
+//  On CPU-only it runs the CPU path; on your GPU it exercises the kernel.
+// =====================================================================
+fn app() {
+    set_seed(1);
+    let S = 512.0;    // long enough to dispatch to GPU (B*S*S >= 262144)
+    let dk = 64.0;
+    let Q = randn(1, 512 * 64);
+    let K = randn(1, 512 * 64);
+    let V = randn(1, 512 * 64);
+
+    let out_std = attention_causal(Q, K, V, 1.0, S, dk);
+    let out_flash = flash_attention(Q, K, V, 1.0, S, dk, 64.0);
+
+    let diff = sum(abs(out_std - out_flash));
+    print("sum|standard - flash_gpu| = ");
+    println(diff);
+    print("mean abs output = ");
+    println(sum(abs(out_flash)) / (512.0 * 64.0));
+    println("");
+    println("diff should be small relative to mean output (fp32 GPU vs fp64 CPU).");
+    println("If diff is tiny, your GPU FlashAttention kernel is numerically correct.");
+    return 0.0;
+}

@@ -1,0 +1,46 @@
+// =====================================================================
+//  train_policy.dream -- learn the dodge-game policy from demonstrations.
+//
+//  A 5 -> 32 -> 32 -> 3 MLP trained with AdamW on the (state, action)
+//  pairs in game_X.csv / game_Y.csv. Exports the trained weights so the
+//  C runner can load them and play. Every op here is gradcheck-verified.
+// =====================================================================
+fn app() {
+    set_seed(7);
+    let X = read_csv("game_X.csv", 0);
+    let Y = read_csv("game_Y.csv", 0);
+    println("data loaded");
+
+    let W1 = kaiming_init(32, 5);   let b1 = zeros(1, 32);
+    let W2 = kaiming_init(32, 32);  let b2 = zeros(1, 32);
+    let W3 = kaiming_init(3, 32);   let b3 = zeros(1, 3);
+
+    let it = batch_iter(X, Y, 64);
+    for (epoch in 0..12) {
+        reset_iter(it);
+        let last = 0.0;
+        while (has_next(it) > 0.5) {
+            let (bx, by) = next_batch(it);
+            let h1 = relu(linear(bx, W1, b1));
+            let h2 = relu(linear(h1, W2, b2));
+            let logits = linear(h2, W3, b3);
+            let loss = nll_loss(log_softmax(logits), by);
+            backward(loss);
+            adamw_update(W1, 0.003, 0.9, 0.999, 0.00000001, 0.001); zero_grad(W1);
+            adamw_update(b1, 0.003, 0.9, 0.999, 0.00000001, 0.0);   zero_grad(b1);
+            adamw_update(W2, 0.003, 0.9, 0.999, 0.00000001, 0.001); zero_grad(W2);
+            adamw_update(b2, 0.003, 0.9, 0.999, 0.00000001, 0.0);   zero_grad(b2);
+            adamw_update(W3, 0.003, 0.9, 0.999, 0.00000001, 0.001); zero_grad(W3);
+            adamw_update(b3, 0.003, 0.9, 0.999, 0.00000001, 0.0);   zero_grad(b3);
+            last = last * 0.0 + loss[0];
+        }
+        print("epoch "); print(epoch); print("  loss "); println(last);
+    }
+
+    // Export weights for the C runner (row-major text, one matrix per file).
+    save_matrix(W1, "policy_W1.txt"); save_matrix(b1, "policy_b1.txt");
+    save_matrix(W2, "policy_W2.txt"); save_matrix(b2, "policy_b2.txt");
+    save_matrix(W3, "policy_W3.txt"); save_matrix(b3, "policy_b3.txt");
+    println("policy exported");
+    return 0.0;
+}

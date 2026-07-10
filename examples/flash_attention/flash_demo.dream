@@ -1,0 +1,39 @@
+// =====================================================================
+//  flash_demo.dream -- FlashAttention vs standard attention.
+//  Run:  dream run flash_demo.dream
+//
+//  Shows two things:
+//   1. flash_attention gives the SAME result as attention_causal
+//      (online softmax is exact -- the difference is float-level noise).
+//   2. flash_attention uses O(N) memory (no S x S matrix), so it scales to
+//      long sequences the standard version would blow memory on.
+// =====================================================================
+fn app() {
+    set_seed(1);
+    let B = 1.0;
+    let S = 128.0;     // sequence length
+    let dk = 32.0;     // head dimension
+    let block = 32.0;  // FlashAttention K/V block size
+
+    // random Q, K, V  (shape: 1 x S*dk, matching attention's layout)
+    let Q = randn(1, 128 * 32);
+    let K = randn(1, 128 * 32);
+    let V = randn(1, 128 * 32);
+
+    // standard attention (materializes S x S matrix)
+    let out_std = attention_causal(Q, K, V, B, S, dk);
+    // FlashAttention (tiled, online softmax, no S x S matrix)
+    let out_flash = flash_attention(Q, K, V, B, S, dk, block);
+
+    // compare: sum of absolute difference should be ~0
+    let diff = sum(abs(out_std - out_flash));
+    print("sum|standard - flash| = ");
+    println(diff);
+    print("(should be ~0, i.e. identical up to float noise)");
+    println("");
+
+    // both produce the same output shape
+    print("output shape: ");
+    print_shape(out_flash);
+    return 0.0;
+}

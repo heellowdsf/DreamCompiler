@@ -1,0 +1,104 @@
+// production_training.dream — Realistic training workflow
+// Demonstrates: seed control, numerical stability, NaN detection, checkpoint save/resume
+//
+// Run once to train from scratch.
+// Run again to automatically resume from checkpoint.
+
+import "nn.dream"
+
+fn app() {
+    println("=== Dream Production Training Demo ===");
+
+    // 1. REPRODUCIBILITY — set seed for deterministic training
+    set_seed(42);
+
+    // 2. DATA
+    let (images, labels) = gen_digits(100);
+    println("Dataset: 1000 samples x 64 features, 10 classes");
+
+    // 3. MODEL INIT — or resume from checkpoint if available
+    let W1 = kaiming_init(128, 64);
+    let b1 = zeros(1, 128);
+    let W2 = kaiming_init(10, 128);
+    let b2 = zeros(1, 10);
+    let start_epoch = 0;
+    let lr = 0.01;
+
+    // Try to resume (ckpt_load returns -1 if file missing)
+    let resume_id = ckpt_load("models/checkpoint.drck");
+    if (resume_id >= 0.0) {
+        W1 = ckpt_get(resume_id, "W1");
+        b1 = ckpt_get(resume_id, "b1");
+        W2 = ckpt_get(resume_id, "W2");
+        b2 = ckpt_get(resume_id, "b2");
+        start_epoch = ckpt_epoch(resume_id);
+        lr = ckpt_lr(resume_id);
+        println("Resumed from checkpoint at epoch ", start_epoch);
+    } else {
+        println("No checkpoint found, training from scratch");
+    }
+
+    // 4. TRAINING LOOP
+    let total_epochs = start_epoch + 10;
+    let iter = batch_iter(images, labels, 64);
+
+    for (epoch in start_epoch..total_epochs) {
+        reset_iter(iter);
+
+        while (has_next(iter) > 0.5) {
+            let (bx, by) = next_batch(iter);
+
+            let z1 = bx @ transpose(W1) + b1;
+            let a1 = relu(z1);
+            let logits = a1 @ transpose(W2) + b2;
+
+            // Numerically stable loss (log_softmax + nll_loss)
+            let log_probs = log_softmax(logits);
+            let loss = nll_loss(log_probs, by);
+
+            // NaN check before backward
+            if (has_nan(loss) > 0.5) {
+                println("  NaN detected at epoch ", epoch, " — reducing lr");
+                lr = lr * 0.5;
+            } else {
+                backward(loss);
+                param_update(W1, grad(W1), lr); zero_grad(W1);
+                param_update(b1, grad(b1), lr); zero_grad(b1);
+                param_update(W2, grad(W2), lr); zero_grad(W2);
+                param_update(b2, grad(b2), lr); zero_grad(b2);
+            }
+        }
+
+        if (epoch % 2 == 0) {
+            let ez1 = images @ transpose(W1) + b1;
+            let ea1 = relu(ez1);
+            let test_logits = ea1 @ transpose(W2) + b2;
+            let acc = accuracy(test_logits, labels);
+            println("epoch ", epoch, "  lr=", lr, "  acc=", acc);
+        }
+
+        // Save checkpoint every 5 epochs (inline, no helper function)
+        if (epoch % 5 == 0) {
+            let id = ckpt_new();
+            ckpt_add(id, "W1", W1);
+            ckpt_add(id, "b1", b1);
+            ckpt_add(id, "W2", W2);
+            ckpt_add(id, "b2", b2);
+            ckpt_set_meta(id, epoch, 0, lr);
+            ckpt_save(id, "models/checkpoint.drck");
+        }
+    }
+
+    // Final save
+    let final_id = ckpt_new();
+    ckpt_add(final_id, "W1", W1);
+    ckpt_add(final_id, "b1", b1);
+    ckpt_add(final_id, "W2", W2);
+    ckpt_add(final_id, "b2", b2);
+    ckpt_set_meta(final_id, total_epochs, 0, lr);
+    ckpt_save(final_id, "models/final.drck");
+
+    println("\n=== Training complete, saved to models/final.drck ===");
+    println("Run again to resume from checkpoint.");
+    return 0.0;
+}

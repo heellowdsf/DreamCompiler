@@ -1,0 +1,43 @@
+// =====================================================================
+//  flash_longseq.dream -- FlashAttention memory advantage on long sequences.
+//  Run:  dream run flash_longseq.dream
+//
+//  Standard attention allocates an S x S score matrix per head. At S=1024
+//  that is 1024*1024*8 bytes = 8 MB PER HEAD just for scores. FlashAttention
+//  never allocates it -- memory is O(S*dk), independent of S^2.
+//
+//  This runs FlashAttention at growing sequence lengths and times each. The
+//  point: it stays memory-light where standard attention's S x S matrix grows
+//  quadratically. Compare wall time; watch that it completes at long S.
+// =====================================================================
+fn app() {
+    set_seed(1);
+    let dk = 64.0;
+    let block = 64.0;
+
+    // S = 256
+    let Q1 = randn(1, 256 * 64);
+    let t0 = time();
+    let o1 = flash_attention(Q1, Q1, Q1, 1.0, 256.0, dk, block);
+    let t1 = time();
+    print("S=256  flash wall (s): "); println(t1 - t0);
+
+    // S = 512
+    let Q2 = randn(1, 512 * 64);
+    let t2 = time();
+    let o2 = flash_attention(Q2, Q2, Q2, 1.0, 512.0, dk, block);
+    let t3 = time();
+    print("S=512  flash wall (s): "); println(t3 - t2);
+
+    // S = 1024  (standard attention's S x S = 8MB/head; flash stays O(N))
+    let Q3 = randn(1, 1024 * 64);
+    let t4 = time();
+    let o3 = flash_attention(Q3, Q3, Q3, 1.0, 1024.0, dk, block);
+    let t5 = time();
+    print("S=1024 flash wall (s): "); println(t5 - t4);
+
+    println("");
+    println("FlashAttention completed all lengths with O(N) memory.");
+    println("Standard attention would allocate S*S scores (grows quadratically).");
+    return 0.0;
+}

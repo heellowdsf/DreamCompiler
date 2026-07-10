@@ -1,0 +1,17 @@
+// Direct GPU matmul correctness check you can read the numbers from.
+// Computes the same matmul and prints a value; compare mentally with the
+// CPU-only run (set DREAM_NO_GPU if you want to force CPU, or trust the
+// gpu_selftest above). The point: a large matmul that routes to your GPU.
+fn app() {
+    set_seed(1);
+    let a = randn(256, 256);
+    let b = randn(256, 256);
+    let c = a @ b;            // large enough to dispatch to the GPU
+    print("GPU matmul result sum: ");
+    println(sum(c));
+    print("output shape: ");
+    print_shape(c);
+    println("");
+    println("If this matches a CPU run's sum, your GPU matmul is numerically correct.");
+    return 0.0;
+}

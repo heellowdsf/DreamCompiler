@@ -1,0 +1,49 @@
+// gpu_benchmark.dream - Stress test the OpenCL path.
+//
+// Intent: measure matmul performance on the GPU after kernel optimization.
+// PyTorch on Intel/AMD GPUs either doesn't work or needs special setup.
+// Dream's OpenCL path works out of the box on any GPU that has drivers.
+
+fn app() {
+    println("=== Dream OpenCL matmul benchmark ===");
+    println("Sizes below trigger GPU path (M*N >= 65536).");
+    println("Watch for [dream] backend: OpenCL line to confirm.\n");
+
+    // Warmup: force OpenCL init + kernel compile
+    let w = randn(256, 256);
+    let _ = w @ w;
+
+    println("--- Small (CPU path, 256x256, for reference) ---");
+    let a256 = randn(256, 256);
+    let b256 = randn(256, 256);
+    let t1 = tic("m256");
+    for (i in 0..50) { let c = a256 @ b256; }
+    toc(t1, "matmul 256x256 x50");
+
+    println("\n--- Medium (GPU kicks in) ---");
+    let a512 = randn(512, 512);
+    let b512 = randn(512, 512);
+    let t2 = tic("m512");
+    for (i in 0..20) { let c = a512 @ b512; }
+    toc(t2, "matmul 512x512 x20");
+
+    println("\n--- Large (GPU shines) ---");
+    let a1024 = randn(1024, 1024);
+    let b1024 = randn(1024, 1024);
+    let t3 = tic("m1024");
+    for (i in 0..10) { let c = a1024 @ b1024; }
+    toc(t3, "matmul 1024x1024 x10");
+
+    println("\n--- Extra large (2x 2048) ---");
+    let a2048 = randn(2048, 2048);
+    let b2048 = randn(2048, 2048);
+    let t4 = tic("m2048");
+    for (i in 0..5) { let c = a2048 @ b2048; }
+    toc(t4, "matmul 2048x2048 x5");
+
+    println("\nFor reference:");
+    println("  CPU on Intel Iris laptop: ~5-9 GFLOPS");
+    println("  Tiled OpenCL on Iris Plus: target ~50-100 GFLOPS");
+    println("  PyTorch on Intel GPU without IPEX: not supported (CPU fallback)");
+    return 0.0;
+}

@@ -1,0 +1,49 @@
+// =====================================================================
+//  augment_demo.dream -- opt-in data augmentation, done safely.
+//
+//  augment(X, Y, when_below, up_to) synthesizes SMOTE-style samples ONLY
+//  when the real data has fewer than `when_below` rows, growing it to
+//  `up_to` rows. Synthetic points are convex combinations of two real
+//  same-class samples plus <=5% jitter, so they stay inside the real data
+//  distribution -- never garbage, never extrapolated.
+//
+//  Guards (compile-time warnings): when_below < 1, up_to <= when_below,
+//  or up_to > 100*when_below all warn. Data already at/above the threshold
+//  is passed through unchanged.
+// =====================================================================
+fn train_eval(Xtr, Ytr, Xte, Yte, tag) {
+    set_seed(99);
+    let W1 = kaiming_init(16, 4);  let b1 = zeros(1, 16);
+    let W2 = kaiming_init(2, 16);  let b2 = zeros(1, 2);
+    let ep = 0;
+    while (ep < 80) {
+        let h = relu(linear(Xtr, W1, b1));
+        let loss = nll_loss(log_softmax(linear(h, W2, b2)), Ytr);
+        backward(loss);
+        adamw_update(W1, 0.01, 0.9, 0.999, 0.00000001, 0.001); zero_grad(W1);
+        adamw_update(b1, 0.01, 0.9, 0.999, 0.00000001, 0.0);   zero_grad(b1);
+        adamw_update(W2, 0.01, 0.9, 0.999, 0.00000001, 0.001); zero_grad(W2);
+        adamw_update(b2, 0.01, 0.9, 0.999, 0.00000001, 0.0);   zero_grad(b2);
+        ep = ep + 1;
+    }
+    let ht = relu(linear(Xte, W1, b1));
+    let acc = accuracy(linear(ht, W2, b2), Yte);
+    print(tag); print(" test accuracy: "); println(acc);
+    return acc;
+}
+
+fn app() {
+    let Xtr = read_csv("tr_x.csv", 0);
+    let Ytr = read_csv("tr_y.csv", 0);
+    let Xte = read_csv("te_x.csv", 0);
+    let Yte = read_csv("te_y.csv", 0);
+    println("=== training on 24 real samples ===");
+    train_eval(Xtr, Ytr, Xte, Yte, "real-only");
+
+    println("=== augmenting 24 -> 96, then training ===");
+    let XA = augment(Xtr, Ytr, 100, 96);      // only if < 100 rows
+    let YA = augment_y(Xtr, Ytr, 100, 96);
+    print("synthetic rows added: "); println(augment_count(XA));
+    train_eval(XA, YA, Xte, Yte, "augmented");
+    return 0.0;
+}

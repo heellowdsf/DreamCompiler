@@ -1,0 +1,74 @@
+// export_to_c_demo.dream — Train in Dream, export to pure C, compile for any target.
+//
+// The output is a self-contained .h + .c file pair:
+//   * Zero dependencies (just stdlib math.h)
+//   * No malloc — all stack buffers
+//   * Compiles with any C99 compiler (GCC, clang, MSVC, ARM-GCC, IAR...)
+//   * Deployable to STM32, ESP32, Arduino, Raspberry Pi Pico, or regular PCs
+//
+// This is Dream's unique value: PyTorch/TensorFlow cannot do this.
+
+fn app() {
+    println("=== Dream -> C code generation demo ===\n");
+
+    set_seed(42);
+
+    // Standard MLP trained on synthetic digit data
+    let (X, Y) = gen_digits(100);
+    let W1 = kaiming_init(128, 64);
+    let b1 = zeros(1, 128);
+    let W2 = kaiming_init(64, 128);
+    let b2 = zeros(1, 64);
+    let W3 = kaiming_init(10, 64);
+    let b3 = zeros(1, 10);
+
+    let iter = batch_iter(X, Y, 64);
+    println("Training 3-layer MLP (64->128->64->10)...");
+    for (epoch in 0..15) {
+        reset_iter(iter);
+        while (has_next(iter) > 0.5) {
+            let (bx, by) = next_batch(iter);
+            let h1 = linear_relu(bx, W1, b1);
+            let h2 = linear_relu(h1, W2, b2);
+            let logits = linear(h2, W3, b3);
+            let lp = log_softmax(logits);
+            let loss = nll_loss(lp, by);
+            backward(loss);
+            param_update(W1, grad(W1), 0.01); zero_grad(W1);
+            param_update(b1, grad(b1), 0.01); zero_grad(b1);
+            param_update(W2, grad(W2), 0.01); zero_grad(W2);
+            param_update(b2, grad(b2), 0.01); zero_grad(b2);
+            param_update(W3, grad(W3), 0.01); zero_grad(W3);
+            param_update(b3, grad(b3), 0.01); zero_grad(b3);
+        }
+    }
+
+    // Final accuracy
+    let ph1 = linear_relu(X, W1, b1);
+    let ph2 = linear_relu(ph1, W2, b2);
+    let plogits = linear(ph2, W3, b3);
+    let acc = accuracy(plogits, Y);
+    println("Trained accuracy: ", acc);
+
+    println("\n=== Exporting to C ===\n");
+
+    // Package parameters as a checkpoint, then export
+    let id = ckpt_new();
+    ckpt_add(id, "fc1.weight", W1);
+    ckpt_add(id, "fc1.bias",   b1);
+    ckpt_add(id, "fc2.weight", W2);
+    ckpt_add(id, "fc2.bias",   b2);
+    ckpt_add(id, "fc3.weight", W3);
+    ckpt_add(id, "fc3.bias",   b3);
+
+    // Generate mlp_model.h and mlp_model.c
+    export_c_header(id, "mlp_model", "mlp_predict");
+
+    println("\n=== Next steps ===");
+    println("The generated mlp_model.h and mlp_model.c are in your working dir.");
+    println("Compile them anywhere with a C compiler:");
+    println("  gcc -O2 mlp_model.c your_app.c -lm -o your_app");
+    println("Or cross-compile for embedded:");
+    println("  arm-none-eabi-gcc -mcpu=cortex-m4 -O2 mlp_model.c app.c -o app.elf");
+    return 0.0;
+}

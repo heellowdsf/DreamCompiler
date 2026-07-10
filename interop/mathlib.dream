@@ -1,0 +1,10 @@
+// mathlib.dream -- Dream functions exported to C via `dream build --lib`.
+// No fn app() needed: this is a library, not a program.
+
+fn poly(x) {
+    return x * x * 3.0 + x + 1.0;
+}
+
+fn net_score(v, W) {
+    return sum(relu(v @ W));
+}
