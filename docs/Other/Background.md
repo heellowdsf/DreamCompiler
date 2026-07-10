@@ -14,7 +14,7 @@ So at first I wrote a weight calculator in Java, but it was calculating everythi
 
 So I started making constant changes. During this process, I kept searching for all kinds of stuff on the browser. Later, this calculator could barely calculate correctly, but it was also then that I realized if I wanted to really improve this calculator, I would be facing an insurmountable mountain. So from that time on, I put this project aside (2022).
 
-## 2024
+## From 2024 to 2026
 At this point, I realized that AI seemed to be on the rise, because many well-known AIs had emerged, like ChatGPT.
 
 I restarted this project and rewrote it in C first. At that time, I learned about PyTorch, and I realized that I probably couldn't surpass it. PyTorch is ahead of Dream both in ecosystem and technology.
