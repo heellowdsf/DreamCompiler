@@ -1,0 +1,8 @@
+// Indexing an f32 matmul result must see the synced values, not stale zeros.
+// EXPECT: 2
+fn app() {
+    let a = ones(2, 2) as f32;
+    let c = a @ a;
+    println(c[0]);
+    return 0.0;
+}

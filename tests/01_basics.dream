@@ -1,0 +1,9 @@
+// EXPECT: 2
+// EXPECT: 3.3333333333333335
+fn app() {
+    let a = 1 + 1;
+    let c = 10.0 / 3.0;
+    println(a);
+    println(c);
+    return 0.0;
+}

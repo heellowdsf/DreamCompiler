@@ -1,0 +1,20 @@
+// FlashAttention backward must produce the same gradients as standard
+// attention backward -- and do it WITHOUT materializing the S x S matrix
+// (block-wise recomputation using saved per-row softmax stats). If the
+// backward needed the S x S matrix, the forward's memory win would be lost
+// during training. This verifies dQ matches standard attention's dQ exactly.
+// EXPECT: FLASH_BWD_MATCH
+fn app() {
+    set_seed(5);
+    let Q = randn(1, 512); let K = randn(1, 512); let V = randn(1, 512);
+    let o1 = attention_causal(Q, K, V, 1.0, 32.0, 16.0);
+    backward(sum(o1));
+    let g1 = sum(abs(grad(Q)));
+    zero_grad(Q); zero_grad(K); zero_grad(V);
+    let o2 = flash_attention(Q, K, V, 1.0, 32.0, 16.0, 8.0);
+    backward(sum(o2));
+    let g2 = sum(abs(grad(Q)));
+    if (abs(g1 - g2) < 0.0000001) { println("FLASH_BWD_MATCH"); }
+    else { println("FLASH_BWD_MISMATCH"); }
+    return 0.0;
+}

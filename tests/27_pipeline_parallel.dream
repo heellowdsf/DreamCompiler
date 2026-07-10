@@ -1,0 +1,9 @@
+// Pipeline parallelism: splitting a deep model into stages (layer groups on
+// different GPUs), passing activations forward and gradients backward, must
+// equal running the whole model on one device -- bit-for-bit. This is
+// function-composition associativity, and it's what lets a model too DEEP for
+// one GPU be trained (GPT-4's ~120 layers don't fit on one card). Verified
+// for 2, 3, 6 stages. The stage-boundary transfer is where NCCL send/recv
+// plugs in on hardware; the math is transport-independent.
+// EXPECT: PIPELINE: 3/3 PASS
+fn app() { pipeline_parallel_selftest(); return 0.0; }

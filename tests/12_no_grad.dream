@@ -1,0 +1,11 @@
+// no_grad keeps tensor-accumulation loops O(1) in memory.
+// EXPECT: 100000
+fn app() {
+    let a = ones(4, 4);
+    let i = 0;
+    no_grad {
+        while (i < 100000) { let c = a @ a; i = i + 1; }
+    }
+    println(i);
+    return 0.0;
+}

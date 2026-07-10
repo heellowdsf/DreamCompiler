@@ -1,0 +1,25 @@
+// Bit-exact reproducibility: two identical seeded runs must produce
+// byte-identical results, including the OMP-parallel GEMM / backward paths
+// (all parallel loops partition on the output dimension -- no atomics, no
+// reductions, so thread count cannot change the arithmetic).
+// EXPECT: DETERMINISM: PASS
+fn run_once() {
+    let A = randn(160, 160);
+    let W = randn(160, 160);
+    let h = relu(A @ W);            // big matmul: OMP GEMM path
+    let d = dropout(h, 0.8);        // RNG-dependent op
+    let q = randn(1, 128);
+    let at = attention(q, q, q, 1.0, 4.0, 32.0);
+    let loss = sum(d) + sum(at) * 3.0;
+    backward(loss);
+    return loss[0] + sum(grad(W)) * 7.0;
+}
+fn app() {
+    set_seed(31337);
+    let f1 = run_once();
+    set_seed(31337);
+    let f2 = run_once();
+    if (f1 - f2 == 0.0) { println("DETERMINISM: PASS"); }
+    else { print("DETERMINISM: FAIL diff="); println(f1 - f2); }
+    return 0.0;
+}

@@ -1,0 +1,8 @@
+// ZeRO optimizer-state sharding correctness. Adam's m/v state is the biggest
+// memory cost in large-model training; ZeRO shards it across N GPUs so each
+// holds only 1/N. Because each element's update depends only on its own
+// state, sharded AdamW must equal full AdamW bit-for-bit -- verified over 20
+// steps for shard counts 2,4,5,8. This is the memory-scaling foundation that
+// makes training a model too big for one GPU possible.
+// EXPECT: ZERO: 4/4 PASS
+fn app() { zero_adamw_selftest(); return 0.0; }

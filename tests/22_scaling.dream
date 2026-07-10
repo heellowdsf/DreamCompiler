@@ -1,0 +1,8 @@
+// Distributed scaling efficiency -- the real measure of "extreme" in
+// multi-GPU. Ring all-reduce traffic must stay bounded by 2x the gradient
+// regardless of GPU count (bandwidth-optimal, what makes near-linear scaling
+// possible), while naive reducer-based all-reduce grows linearly with GPU
+// count. Verified for K up to 128. This is the property that lets added GPUs
+// approach K-times throughput instead of drowning in communication.
+// EXPECT: RING_OPT: 7/7 PASS
+fn app() { ring_optimality_selftest(); return 0.0; }

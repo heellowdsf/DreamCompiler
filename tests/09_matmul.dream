@@ -1,0 +1,7 @@
+// EXPECT: 3 3
+fn app() {
+    let m = ones(2, 3);
+    let n = ones(3, 2);
+    print(m @ n);
+    return 0.0;
+}

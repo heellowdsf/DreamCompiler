@@ -1,0 +1,7 @@
+// EXPECT: shape mismatch
+fn app() {
+    let a = ones(2, 3);
+    let b = ones(5, 7);
+    let c = a @ b;
+    return 0.0;
+}

@@ -1,0 +1,7 @@
+// Micro-batch pipeline scheduling: splitting the batch into micro-batches to
+// fill the pipeline (keep all stages busy, shrink the idle "bubble") gives
+// gradients identical to a full-batch pass -- the gradient is summed over
+// micro-batches, which equals the full-batch gradient exactly. Only timing
+// improves; the numbers are unchanged. Verified for 2,3,4,6 micro-batches.
+// EXPECT: MICROBATCH: 4/4 PASS
+fn app() { microbatch_selftest(); return 0.0; }

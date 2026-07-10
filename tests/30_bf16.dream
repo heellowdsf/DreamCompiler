@@ -1,0 +1,8 @@
+// bf16 mixed-precision training (PyTorch AMP core): compute in bf16 to halve
+// memory bandwidth and speed matmuls, keep fp32 master weights so the
+// optimizer doesn't lose small gradients. bf16 shares fp32's 8-bit exponent
+// (same range, 7 mantissa bits), so it rarely overflows -- unlike fp16 --
+// which is why it's the training standard. Verified: bf16 rounding correct,
+// range beats fp16 (1e30 survives), mixed-precision loop converges near fp32.
+// EXPECT: BF16_MIXED: 3/3 PASS
+fn app() { bf16_selftest(); return 0.0; }

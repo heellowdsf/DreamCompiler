@@ -1,0 +1,8 @@
+// Mixture of Experts (Mixtral/Grok architecture): a router sends each token to
+// its top-k experts (of many), and their outputs are combined by gate weights.
+// Huge parameter count, small per-token compute. Verified: top-k routing +
+// gated combine matches the brute-force reference exactly, and every token is
+// assigned to exactly k experts. On multi-GPU the experts shard across devices
+// with all-to-all token dispatch; the routing/combine math is verified here.
+// EXPECT: MOE: 2/2 PASS
+fn app() { moe_selftest(); return 0.0; }

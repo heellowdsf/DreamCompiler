@@ -1,0 +1,6 @@
+// Data loader correctness: parallel sharding must cover every sample exactly
+// once (no loss/duplication), shuffling must be a valid permutation, and
+// batching must preserve sample count. A bug here silently corrupts training
+// on the wrong data. Verified for multiple worker counts, seeds, batch sizes.
+// EXPECT: DATALOADER: 12/12 PASS
+fn app() { dataloader_selftest(); return 0.0; }

@@ -1,0 +1,7 @@
+// GPU kernel correctness. On a machine with a GPU/OpenCL device this runs
+// every GPU kernel (tiled matmul, elementwise) against the CPU reference and
+// checks they agree to fp32 tolerance. On a CPU-only host it reports SKIP and
+// passes -- there is nothing to verify. Either way the line below must appear,
+// so the test confirms the GPU self-check path is wired up and callable.
+// EXPECT: GPU:
+fn app() { gpu_selftest(); return 0.0; }

@@ -1,0 +1,9 @@
+// f32 compute path: results must match f64 semantics on exact inputs.
+// ones(2,2)@ones(2,2) has every element 2; sum = 8.
+// EXPECT: 8
+fn app() {
+    let a = ones(2, 2) as f32;
+    let c = a @ a;
+    println(sum(c) as exact);
+    return 0.0;
+}

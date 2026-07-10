@@ -1,0 +1,8 @@
+// Neumaier compensated sum recovers the tail a naive sum loses.
+// EXPECT: 1.000000000001e+16
+fn app() {
+    let v = ones(1, 10001);
+    v[0] = 10000000000000000.0;
+    println(sum(v) as exact);
+    return 0.0;
+}

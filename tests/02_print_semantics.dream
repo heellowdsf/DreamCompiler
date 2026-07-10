@@ -1,0 +1,6 @@
+// print does not add a newline; println adds exactly one.
+// EXPECT: 123
+fn app() {
+    print(1.0); print(2.0); println(3.0);
+    return 0.0;
+}

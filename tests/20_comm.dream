@@ -1,0 +1,7 @@
+// Communication optimization correctness: bucketed ring all-reduce (the
+// bandwidth-optimal schedule NCCL uses) must produce the exact same summed
+// gradient as naive per-parameter reduction. This guarantees the comm
+// optimizations (bucketing + ring) are numerically transparent -- they make
+// multi-GPU faster without changing the result. Verified on real Dream params.
+// EXPECT: COMM: 3/3 PASS
+fn app() { comm_selftest(); return 0.0; }

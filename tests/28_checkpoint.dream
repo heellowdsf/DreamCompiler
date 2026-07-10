@@ -1,0 +1,7 @@
+// Gradient checkpointing: recomputing activations in the backward pass gives
+// identical gradients to storing them, trading ~30% compute for O(1) instead
+// of O(depth) activation memory. A recomputed activation is bit-identical to
+// the stored one (deterministic ops), so gradients match exactly. This lets
+// deeper models fit in memory. Verified: recompute grads == stored grads.
+// EXPECT: CHECKPOINT: 1/1 PASS
+fn app() { checkpoint_selftest(); return 0.0; }

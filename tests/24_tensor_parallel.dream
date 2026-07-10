@@ -1,0 +1,9 @@
+// Tensor parallelism: splitting one matmul's weight matrix across GPUs and
+// recombining must equal the un-split matmul, bit-for-bit. This is the
+// capability that lets a single layer too big for one GPU (70B+ models) be
+// trained -- column-parallel all-gathers outputs, row-parallel all-reduces
+// them. Verified on real Dream tensors for 2,3,4-way splits. The split/merge
+// math is independent of transport, so real NCCL on multi-GPU gives the same
+// result. Runs correctly on a single device today (shards computed in-process).
+// EXPECT: TENSOR_PARALLEL: 5/5 PASS
+fn app() { tensor_parallel_selftest(); return 0.0; }

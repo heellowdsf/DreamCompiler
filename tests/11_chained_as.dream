@@ -1,0 +1,7 @@
+// Chained precision annotations parse cleanly.
+// EXPECT: 1 1
+fn app() {
+    let x = ones(2, 2) as f32 as f64;
+    print(x);
+    return 0.0;
+}

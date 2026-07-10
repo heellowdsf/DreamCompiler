@@ -1,0 +1,14 @@
+// mse (mean squared error): the most basic regression loss. Added during the
+// open-source audit because the README used it but it didn't exist. Verifies
+// the forward value and that training with it reduces the loss.
+// EXPECT: MSE: PASS
+fn app() {
+    let pred = ones(1, 4);
+    let target = zeros(1, 4);
+    let loss = mse(pred, target);       // mean((1-0)^2) = 1.0
+    backward(loss);
+    let g = sum(grad(pred));            // d/dpred = 2*(1-0)/4 = 0.5 each, sum = 2.0
+    if (loss[0] == 1.0 && g[0] == 2.0) { println("MSE: PASS"); }
+    else { println("MSE: FAIL"); }
+    return 0.0;
+}

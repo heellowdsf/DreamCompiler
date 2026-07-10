@@ -1,0 +1,18 @@
+// Scalar and element-wise min/max with correct gradients. min(a,b) and
+// max(a,b) were missing before the open-source audit (only tensor-reduction
+// min_val/max_val existed). Gradient flows to the selected operand.
+// EXPECT: MINMAX: PASS
+fn app() {
+    // scalar
+    let lo = min(3.0, 5.0);
+    let hi = max(3.0, 5.0);
+    // element-wise on tensors + gradient
+    let a = ones(2, 2);
+    let b = ones(2, 2) + ones(2, 2);   // all 2s
+    let c = max(a, b);                  // all 2s
+    backward(sum(c));
+    let gb = sum(grad(b));             // gradient flows to b (the larger)
+    if (lo[0] == 3.0 && hi[0] == 5.0 && gb[0] == 4.0) { println("MINMAX: PASS"); }
+    else { println("MINMAX: FAIL"); }
+    return 0.0;
+}

@@ -1,0 +1,8 @@
+// Data-parallel correctness: N-way data parallelism must produce the exact
+// same gradient as a single device with N-times the batch. This is the core
+// mathematical guarantee of data parallelism (the gradient is a sum over
+// samples, which partitions cleanly across shards). Verified on real Dream
+// tensors + autograd. The result is independent of the communication backend,
+// so a real NCCL all-reduce on multi-GPU hardware yields the same numbers.
+// EXPECT: DIST: 5/5 PASS
+fn app() { dist_selftest(); return 0.0; }

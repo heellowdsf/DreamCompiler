@@ -1,0 +1,9 @@
+// FlashAttention: tiled attention with online softmax produces the same
+// result as standard attention WITHOUT materializing the S x S score matrix.
+// Standard attention uses O(N^2) memory (128MB per head at seq 4096);
+// FlashAttention uses O(N) -- only a per-row accumulator. Verified equal to
+// standard attention (bit-close, online softmax is exact up to float
+// reassociation) across sequence lengths and block sizes. This is the entry
+// ticket for long-sequence models the standard implementation can't handle.
+// EXPECT: FLASH_ATTN: 4/4 PASS
+fn app() { flash_attention_selftest(); return 0.0; }

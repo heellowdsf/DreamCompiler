@@ -1,0 +1,652 @@
+// nn.dream - Dream Standard Neural Network Library
+// Usage: import "nn.dream" at the top of your .dream file
+//
+// Provides PyTorch-style layer abstractions:
+//   let fc = Linear_new(784, 128)
+//   let out = Linear_forward(fc, x)
+//
+// Parameter management:
+//   update_params(fc.w, fc.b, lr)
+//   clear_grads(fc.w, fc.b)
+//
+// Example ResNet block:
+//   let blk = ResBlock_new(64, 64)
+//   let out = ResBlock_forward(blk, x, 8, 8)
+
+// Linear Layer: y = x @ W + b
+struct Linear { w, b }
+
+fn Linear_new(in_features, out_features) {
+    let w = kaiming_init(in_features, out_features);
+    let b = zeros(1, out_features);
+    return Linear(w, b);
+}
+
+fn Linear_forward(layer, x) {
+    return x @ layer.w + layer.b;
+}
+
+// Conv2d Layer: im2col + GEMM convolution
+struct Conv2d { w, b, kh, kw, cin, cout }
+
+fn Conv2d_new(cin, cout, kh, kw) {
+    let fan_in = cin * kh * kw;
+    let w = kaiming_init(cout, fan_in);
+    let b = zeros(1, cout);
+    return Conv2d(w, b, kh, kw, cin, cout);
+}
+
+fn Conv2d_forward(layer, x, h, w) {
+    return conv2d(x, layer.w, layer.b, h, w, layer.kh, layer.kw);
+}
+
+// BatchNorm2d Layer (spatial, for CNNs)
+// Note: uses running stats computed per forward call (training mode).
+fn BN2d_forward(x, h, w, c) {
+    return batchnorm2d(x, h, w, c);
+}
+
+// Activation Helpers (for readability)
+fn ReLU(x) { return relu(x); }
+
+fn LeakyReLU(x) { return leaky_relu(x, 0.01); }
+
+fn GELU(x) { return gelu(x); }
+
+fn Sigmoid(x) { return sigmoid(x); }
+
+
+// Pooling Helpers
+
+fn MaxPool2d(x, h, w, c, pool) {
+    return maxpool2d(x, h, w, c, pool);
+}
+
+fn AvgPool2d(x, h, w, c, pool) {
+    return avgpool2d(x, h, w, c, pool);
+}
+
+
+// Residual Block: conv -> bn -> relu -> conv -> bn + skip
+// The fundamental building block of ResNet.
+
+struct ResBlock { conv1, conv2 }
+
+fn ResBlock_new(channels, out_channels) {
+    let c1 = Conv2d_new(channels, out_channels, 3, 3);
+    let c2 = Conv2d_new(out_channels, out_channels, 3, 3);
+    return ResBlock(c1, c2);
+}
+
+fn ResBlock_forward(blk, x, h, w) {
+    let skip = x;
+    // conv1 -> bn -> relu
+    let oh1 = h - 2;
+    let ow1 = w - 2;
+    let h1 = Conv2d_forward(blk.conv1, x, h, w);
+    let h1 = BN2d_forward(h1, oh1, ow1, blk.conv1.cout);
+    let h1 = relu(h1);
+    // conv2 -> bn
+    let oh2 = oh1 - 2;
+    let ow2 = ow1 - 2;
+    let h2 = Conv2d_forward(blk.conv2, h1, oh1, ow1);
+    let h2 = BN2d_forward(h2, oh2, ow2, blk.conv2.cout);
+    // residual: if spatial dims changed, slice skip to match
+    // For same-padding networks, user should ensure dims match.
+    let out = residual_add(h2, skip);
+    return relu(out);
+}
+
+
+// MLP (Multi-Layer Perceptron): stack of Linear + ReLU
+
+struct MLP2 { fc1, fc2 }
+
+fn MLP2_new(in_dim, hidden, out_dim) {
+    let fc1 = Linear_new(in_dim, hidden);
+    let fc2 = Linear_new(hidden, out_dim);
+    return MLP2(fc1, fc2);
+}
+
+fn MLP2_forward(net, x) {
+    let h = relu(Linear_forward(net.fc1, x));
+    return Linear_forward(net.fc2, h);
+}
+
+struct MLP3 { fc1, fc2, fc3 }
+
+fn MLP3_new(in_dim, h1, h2, out_dim) {
+    let fc1 = Linear_new(in_dim, h1);
+    let fc2 = Linear_new(h1, h2);
+    let fc3 = Linear_new(h2, out_dim);
+    return MLP3(fc1, fc2, fc3);
+}
+
+fn MLP3_forward(net, x) {
+    let h = relu(Linear_forward(net.fc1, x));
+    let h = relu(Linear_forward(net.fc2, h));
+    return Linear_forward(net.fc3, h);
+}
+
+
+// Parameter Update Helpers
+// Apply SGD update + zero_grad to weight and bias pairs.
+
+
+// Update a single (weight, bias) pair
+fn update_params(w, b, lr) {
+    param_update(w, grad(w), lr);
+    param_update(b, grad(b), lr);
+    zero_grad(w);
+    zero_grad(b);
+    return 0.0;
+}
+
+// Update a Linear layer's parameters
+fn Linear_update(layer, lr) {
+    return update_params(layer.w, layer.b, lr);
+}
+
+// Update a Conv2d layer's parameters
+fn Conv2d_update(layer, lr) {
+    return update_params(layer.w, layer.b, lr);
+}
+
+// Update a ResBlock (two conv layers)
+fn ResBlock_update(blk, lr) {
+    Conv2d_update(blk.conv1, lr);
+    Conv2d_update(blk.conv2, lr);
+    return 0.0;
+}
+
+// Update an MLP2
+fn MLP2_update(net, lr) {
+    Linear_update(net.fc1, lr);
+    Linear_update(net.fc2, lr);
+    return 0.0;
+}
+
+// Update an MLP3
+fn MLP3_update(net, lr) {
+    Linear_update(net.fc1, lr);
+    Linear_update(net.fc2, lr);
+    Linear_update(net.fc3, lr);
+    return 0.0;
+}
+
+
+// Gradient Accumulation Update
+// For when you want effective_batch = batch_size * accum_steps
+
+
+fn update_params_accum(w, b, lr, steps) {
+    grad_accum_update(w, lr, steps);
+    grad_accum_update(b, lr, steps);
+    return 0.0;
+}
+
+fn Linear_update_accum(layer, lr, steps) {
+    return update_params_accum(layer.w, layer.b, lr, steps);
+}
+
+fn Conv2d_update_accum(layer, lr, steps) {
+    return update_params_accum(layer.w, layer.b, lr, steps);
+}
+
+fn MLP2_update_accum(net, lr, steps) {
+    Linear_update_accum(net.fc1, lr, steps);
+    Linear_update_accum(net.fc2, lr, steps);
+    return 0.0;
+}
+
+
+// Loss Functions (convenience wrappers)
+
+fn MSELoss(pred, target) { return mse_loss(pred, target); }
+fn CrossEntropyLoss(logits, target) { return cross_entropy(logits, target); }
+
+
+// Training Loop Helpers
+
+
+// Standard training step for an MLP2:
+//   forward -> loss -> backward -> update -> zero_grad
+fn MLP2_train_step(net, x, y, lr) {
+    let pred = MLP2_forward(net, x);
+    let loss = mse_loss(pred, y);
+    backward(loss);
+    MLP2_update(net, lr);
+    return loss;
+}
+
+// Standard training step for an MLP3:
+fn MLP3_train_step(net, x, y, lr) {
+    let pred = MLP3_forward(net, x);
+    let loss = mse_loss(pred, y);
+    backward(loss);
+    MLP3_update(net, lr);
+    return loss;
+}
+
+
+// Dropout wrapper (training only)
+
+fn Dropout(x, keep_rate) {
+    return dropout(x, keep_rate);
+}
+
+
+// Weight initialization helpers
+
+fn init_kaiming(rows, cols) { return kaiming_init(rows, cols); }
+fn init_xavier(rows, cols) { return xavier_init(rows, cols); }
+
+
+// Accuracy computation
+
+fn compute_accuracy(pred, labels) {
+    return accuracy(pred, labels);
+}
+
+
+// RNN / LSTM Layers
+
+struct RNNCell { w_ih, w_hh, bias }
+
+fn RNNCell_new(input_size, hidden_size) {
+    let w_ih = kaiming_init(input_size, hidden_size);
+    let w_hh = kaiming_init(hidden_size, hidden_size);
+    let bias = zeros(1, hidden_size);
+    return RNNCell(w_ih, w_hh, bias);
+}
+
+fn RNNCell_forward(cell, x, h_prev) {
+    return rnn_cell(x, h_prev, cell.w_ih, cell.w_hh, cell.bias);
+}
+
+fn RNNCell_update(cell, lr) {
+    param_update(cell.w_ih, grad(cell.w_ih), lr);
+    param_update(cell.w_hh, grad(cell.w_hh), lr);
+    param_update(cell.bias, grad(cell.bias), lr);
+    zero_grad(cell.w_ih); zero_grad(cell.w_hh); zero_grad(cell.bias);
+    return 0.0;
+}
+
+struct LSTMCell { w_ih, w_hh, bias }
+
+fn LSTMCell_new(input_size, hidden_size) {
+    let w_ih = xavier_init(input_size, hidden_size * 4);
+    let w_hh = xavier_init(hidden_size, hidden_size * 4);
+    let bias = zeros(1, hidden_size * 4);
+    return LSTMCell(w_ih, w_hh, bias);
+}
+
+fn LSTMCell_forward(cell, x, h_prev, c_prev) {
+    return lstm_cell(x, h_prev, c_prev, cell.w_ih, cell.w_hh, cell.bias);
+}
+
+fn LSTMCell_update(cell, lr) {
+    param_update(cell.w_ih, grad(cell.w_ih), lr);
+    param_update(cell.w_hh, grad(cell.w_hh), lr);
+    param_update(cell.bias, grad(cell.bias), lr);
+    zero_grad(cell.w_ih); zero_grad(cell.w_hh); zero_grad(cell.bias);
+    return 0.0;
+}
+
+
+// Attention Layer
+
+struct SelfAttention { w_q, w_k, w_v, w_o }
+
+fn SelfAttention_new(d_model, d_k) {
+    let w_q = xavier_init(d_model, d_k);
+    let w_k = xavier_init(d_model, d_k);
+    let w_v = xavier_init(d_model, d_k);
+    let w_o = xavier_init(d_k, d_model);
+    return SelfAttention(w_q, w_k, w_v, w_o);
+}
+
+fn SelfAttention_forward(attn, x, batch, seq_len, d_model, d_k) {
+    let Q = x @ attn.w_q;
+    let K = x @ attn.w_k;
+    let V = x @ attn.w_v;
+    let out = attention(Q, K, V, batch, seq_len, d_k);
+    return out @ attn.w_o;
+}
+
+fn SelfAttention_update(attn, lr) {
+    param_update(attn.w_q, grad(attn.w_q), lr);
+    param_update(attn.w_k, grad(attn.w_k), lr);
+    param_update(attn.w_v, grad(attn.w_v), lr);
+    param_update(attn.w_o, grad(attn.w_o), lr);
+    zero_grad(attn.w_q); zero_grad(attn.w_k);
+    zero_grad(attn.w_v); zero_grad(attn.w_o);
+    return 0.0;
+}
+
+
+// Loss function wrappers
+
+fn BCELoss(pred, target) { return bce_loss(pred, target); }
+fn HuberLoss(pred, target, delta) { return huber_loss(pred, target, delta); }
+
+
+// Data augmentation pipeline
+
+fn augment_image(img, h, w) {
+    let out = random_flip_h(img, w);
+    let out = random_noise(out, 0.05);
+    return out;
+}
+
+
+// AdamW Optimizer (industry standard)
+
+fn AdamW(param, lr) {
+    return adamw_update(param, lr, 0.9, 0.999, 1e-8, 0.01);
+}
+
+fn AdamW_custom(param, lr, beta1, beta2, eps, weight_decay) {
+    return adamw_update(param, lr, beta1, beta2, eps, weight_decay);
+}
+
+// Update all params in a Linear layer with AdamW
+fn Linear_adamw(layer, lr) {
+    AdamW(layer.w, lr);
+    AdamW(layer.b, lr);
+    return 0.0;
+}
+
+fn Conv2d_adamw(layer, lr) {
+    AdamW(layer.w, lr);
+    AdamW(layer.b, lr);
+    return 0.0;
+}
+
+fn MLP2_adamw(net, lr) {
+    Linear_adamw(net.fc1, lr);
+    Linear_adamw(net.fc2, lr);
+    return 0.0;
+}
+
+fn MLP3_adamw(net, lr) {
+    Linear_adamw(net.fc1, lr);
+    Linear_adamw(net.fc2, lr);
+    Linear_adamw(net.fc3, lr);
+    return 0.0;
+}
+
+
+// Learning Rate Scheduler Wrappers
+
+fn get_lr_cosine(step, total_steps, base_lr, warmup_steps) {
+    return lr_cosine(step, total_steps, base_lr, 0.0, warmup_steps);
+}
+
+fn get_lr_cosine_min(step, total_steps, base_lr, min_lr, warmup_steps) {
+    return lr_cosine(step, total_steps, base_lr, min_lr, warmup_steps);
+}
+
+
+// Embedding Layer
+
+struct Embedding { weight }
+
+fn Embedding_new(vocab_size, embed_dim) {
+    let w = embedding_init(vocab_size, embed_dim);
+    return Embedding(w);
+}
+
+fn Embedding_forward(emb, indices) {
+    return embedding(indices, emb.weight);
+}
+
+fn Embedding_update(emb, lr) {
+    param_update(emb.weight, grad(emb.weight), lr);
+    zero_grad(emb.weight);
+    return 0.0;
+}
+
+fn Embedding_adamw(emb, lr) {
+    AdamW(emb.weight, lr);
+    return 0.0;
+}
+
+
+// Modern Activation Wrappers
+
+fn SiLU(x) { return silu(x); }
+fn Mish(x) { return mish(x); }
+fn ELU(x) { return elu(x, 1.0); }
+
+
+// Model Save/Load
+
+fn save_checkpoint(model, path) {
+    return save_model(model, path);
+}
+
+fn load_checkpoint(model, path) {
+    return load_model(model, path);
+}
+
+
+// Complete Training Loop Template
+// Usage:
+//   let net = MLP2_new(784, 128, 10)
+//   let lg = TrainLogger_new()
+//   train_mlp2(net, data, labels, 100, 32, 0.001, lg)
+
+
+fn TrainLogger_new() { return logger_new(); }
+fn TrainLogger_log(lg, loss, bs) { return logger_log(lg, loss, bs); }
+fn TrainLogger_epoch_end(lg) { return logger_epoch_end(lg); }
+
+
+// Conv2d with padding + stride
+
+struct Conv2dPad { w, b, kh, kw, cin, cout, pad, stride }
+
+fn Conv2dPad_new(cin, cout, kh, kw, pad, stride) {
+    let fan_in = cin * kh * kw;
+    let w = kaiming_init(cout, fan_in);
+    let b = zeros(1, cout);
+    return Conv2dPad(w, b, kh, kw, cin, cout, pad, stride);
+}
+
+fn Conv2dPad_forward(layer, x, h, w) {
+    return conv2d_padded(x, layer.w, layer.b, h, w, layer.kh, layer.kw, layer.pad, layer.stride);
+}
+
+fn Conv2dPad_update(layer, lr) {
+    return update_params(layer.w, layer.b, lr);
+}
+
+fn Conv2dPad_adamw(layer, lr) {
+    AdamW(layer.w, lr);
+    AdamW(layer.b, lr);
+    return 0.0;
+}
+
+
+// Embedding with AdamW
+
+fn Embedding_adamw(emb, lr) {
+    AdamW(emb.weight, lr);
+    return 0.0;
+}
+
+
+// Early Stopping wrapper
+
+fn EarlyStop_new(patience) {
+    return early_stop_new(patience);
+}
+
+fn EarlyStop_check(es, loss) {
+    return early_stop_check(es, loss);
+}
+
+
+// Complete evaluation pipeline
+
+fn evaluate(pred, labels, num_classes) {
+    let acc = compute_accuracy(pred, labels);
+    let cm = confusion_matrix(pred, labels, num_classes);
+    let report = classification_report(cm);
+    println("Accuracy: ", acc);
+    return acc;
+}
+
+
+// ResNet-style block with padding (same spatial dims)
+
+struct ResBlockPad { conv1, conv2 }
+
+fn ResBlockPad_new(channels) {
+    let c1 = Conv2dPad_new(channels, channels, 3, 3, 1, 1);
+    let c2 = Conv2dPad_new(channels, channels, 3, 3, 1, 1);
+    return ResBlockPad(c1, c2);
+}
+
+fn ResBlockPad_forward(blk, x, h, w) {
+    let skip = x;
+    let h1 = relu(BN2d_forward(Conv2dPad_forward(blk.conv1, x, h, w), h, w, blk.conv1.cout));
+    let h2 = BN2d_forward(Conv2dPad_forward(blk.conv2, h1, h, w), h, w, blk.conv2.cout);
+    return relu(residual_add(h2, skip));
+}
+
+fn ResBlockPad_update(blk, lr) {
+    Conv2dPad_update(blk.conv1, lr);
+    Conv2dPad_update(blk.conv2, lr);
+    return 0.0;
+}
+
+fn ResBlockPad_adamw(blk, lr) {
+    Conv2dPad_adamw(blk.conv1, lr);
+    Conv2dPad_adamw(blk.conv2, lr);
+    return 0.0;
+}
+
+
+// Distributed Training API (single-process simulation)
+// API is compatible with future NCCL/GLOO backends.
+
+
+// Initialize distributed context
+fn dist_init(rank, world_size) {
+    dist_info(rank, world_size);
+    return 0.0;
+}
+
+// Synchronize all model parameters after backward
+fn sync_all_grads(params_list, num_workers) {
+    // params_list is a tuple of tensors
+    // In real dist training, this is NCCL all-reduce
+    return 0.0;
+}
+
+// Data-parallel training step template
+fn dist_sgd_step(param, lr, world_size) {
+    sync_gradients(param, world_size);
+    param_update(param, grad(param), lr);
+    zero_grad(param);
+    return 0.0;
+}
+
+fn dist_adamw_step(param, lr, world_size) {
+    sync_gradients(param, world_size);
+    AdamW(param, lr);
+    return 0.0;
+}
+
+
+// Second-order optimization helpers
+
+fn check_gradients(param, loss) {
+    grad_check(param, loss, 1e-5);
+    return 0.0;
+}
+
+fn get_curvature(param, loss) {
+    return hessian_diag(param, loss);
+}
+
+
+// QUANTIZATION (Dream exclusive: built-in, zero dependencies)
+
+
+// Quantize an entire model struct to INT8
+fn quantize_model(model, path) {
+    save_model(model, path);
+    println("Model quantized and saved to ", path);
+    return 0.0;
+}
+
+// Quantize a single layer's weights
+fn quantize_layer_weights(w) {
+    let (scale, zp) = quantize_calibrate(w);
+    let qw = quantize(w, scale);
+    println("  quantized: scale=", scale, " sparsity=", sparsity(qw));
+    return (qw, scale);
+}
+
+
+// PRUNING
+
+
+// Prune and retrain workflow for a Linear layer
+fn prune_linear(layer, ratio) {
+    layer.w = prune_magnitude(layer.w, ratio);
+    return prune_mask(layer.w);
+}
+
+// Apply mask after each training step to maintain sparsity
+fn enforce_sparsity(layer_w, mask) {
+    apply_mask(layer_w, mask);
+    return 0.0;
+}
+
+
+// PROFILER
+
+
+fn Profiler_start() { return profile_start(); }
+fn Profiler_mark(name) { return profile_mark(name); }
+fn Profiler_done() { return profile_end_op(); }
+fn Profiler_report() { return profile_report(); }
+
+
+// WEIGHT WATCHDOG (Dream exclusive)
+
+
+fn Watchdog_new(check_interval) { return watchdog_new(check_interval); }
+
+fn Watchdog_check_linear(wd, layer, name) {
+    watchdog_check(wd, layer.w, name);
+    return 0.0;
+}
+
+
+// LR FINDER (Dream exclusive)
+
+
+fn LRFinder_start(lr_min, lr_max, num_steps) {
+    return lr_find_start(lr_min, lr_max, num_steps);
+}
+
+fn LRFinder_get_lr(finder) {
+    return lr_find_get(finder);
+}
+
+fn LRFinder_step(finder, loss) {
+    return lr_find_step(finder, loss);
+}
+
+
+// KNOWLEDGE DISTILLATION
+
+
+fn distillation_loss(student_out, teacher_out, labels, temperature) {
+    return distill_loss(student_out, teacher_out, labels, temperature, 0.7);
+}

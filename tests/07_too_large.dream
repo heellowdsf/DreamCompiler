@@ -1,0 +1,3 @@
+// Oversized allocations degrade gracefully instead of bad_alloc abort.
+// EXPECT: too large
+fn app() { let x = zeros(100000, 100000); return 0.0; }

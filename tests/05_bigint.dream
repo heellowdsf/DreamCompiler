@@ -1,0 +1,3 @@
+// Integer literals beyond int32 must not crash the parser.
+// EXPECT: 3000000000
+fn app() { println(3000000000); return 0.0; }

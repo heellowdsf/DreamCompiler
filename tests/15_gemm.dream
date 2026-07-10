@@ -1,0 +1,3 @@
+// Blocked+packed GEMM must match the naive reference on adversarial shapes.
+// EXPECT: GEMM: 17/17 PASS
+fn app() { gemm_selftest(); return 0.0; }

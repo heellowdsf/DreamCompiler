@@ -1,0 +1,6 @@
+// Adding compute units must never slow training. With ring all-reduce and
+// compute/comm overlap, speedup is monotonically increasing in GPU count and
+// always above 1 for a realistically-sized model -- the "more GPUs but
+// slower" failure mode cannot occur. Verified for 1,2,4,8 units.
+// EXPECT: SPEEDUP: 4/4 PASS
+fn app() { speedup_selftest(); return 0.0; }
