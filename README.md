@@ -64,7 +64,7 @@ single standalone C file** that compiles anywhere with no dependencies beyond
 ### Build
 
 ```bash
-git clone <your-repo-url> Dream
+git clone https://github.com/heellowdsf/DreamCompiler.git Dream
 cd Dream
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$(llvm-config --cmakedir) ..
